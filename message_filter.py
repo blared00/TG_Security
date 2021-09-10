@@ -1,5 +1,7 @@
 import random
 
+import Levenshtein
+
 try:
     import config
 except ImportError:
@@ -18,13 +20,23 @@ except ImportError:
 
 def start_message(message):
     """Приветствие и обработка матов"""
-    if message.text.lower() in config.HELLO_WORD:
-        return "{}, уважаемые. \nПовоюем? Запускай опрос - /poll\nЕсли хочешь просветиться -/wiki".format(
-            random.choice(config.HELLO_WORD).title()
-        )
-    if message.text in config.BAD_WORDS:
-        return "Ты матершинник, {}".format(message["from"].first_name)
+    if message.text:
+        if message.text.lower() in config.HELLO_WORD:
+            return "{}, уважаемые. \nПовоюем? Запускай опрос - /poll\nЕсли хочешь просветиться -/wiki".format(
+                random.choice(config.HELLO_WORD).title()
+            )
 
+        if message.text.lower() in config.BAD_WORDS:
+            return "Ты матершинник, {}".format(message["from"].first_name)
+        if find_command(message.text, config.CALL_BOT):
+            return "{}\nКомандуй\n/poll - опрос;\n/wiki - библиотека знаний.".format(random.choice(config.ANSWER_IN_CALL))
+
+def find_command(text, command):
+    percent_coincidence = 1 - Levenshtein.distance(text, command) / max(
+        len(text), len(command)
+    )
+    if percent_coincidence >= 0.75:
+        return True
 
 def create_poll():
     """Создание опроса"""
