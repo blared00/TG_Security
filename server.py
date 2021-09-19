@@ -1,36 +1,107 @@
 import asyncio
+import datetime
 import logging
+import random
 
 import aioschedule
 import config
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import ContentType
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.types import ContentType, ReplyKeyboardRemove
 from aiogram.utils.exceptions import MessageTextIsEmpty
 
 import methods
+from keyboards import keybord_creater, inline_keybord_creater
 
 """Логирование"""
 logging.basicConfig(level=logging.DEBUG)
 
 """Init"""
-bot = Bot(token=config.TOKEN, parse_mode=types.ParseMode.MARKDOWN_V2)
-dp = Dispatcher(bot)
+bot = Bot(token=config.TOKEN, parse_mode=types.ParseMode.MARKDOWN)
+dp = Dispatcher(bot, storage=MemoryStorage())
 prefix = ("!", '/')
 chat_id = "-571163994"
+poll_answers = []
 
 
-@dp.message_handler(commands=["poll"], commands_prefix=prefix)
+@dp.message_handler(commands=["poll", "опрос"], commands_prefix=prefix)
 async def poll_start_game(message: types.Message):
     """Запуск опроса"""
     await message.answer_poll(*methods.create_poll())
+    count = 0
+    while count < 1:
+        await asyncio.sleep(600)
+        list_no_answer_poll = [n for n in config.CHAT_MEMBERS[chat_id] if n not in poll_answers]
+        if str(message.chat.id) == chat_id and list_no_answer_poll:
+            await message.answer("Голосуем @" + ' @'.join(list_no_answer_poll))
+        count += 1
+    poll_answers.clear()
 
 
-@dp.message_handler(commands=methods.COMMANDS_LIST, commands_prefix=prefix)
+@dp.message_handler(commands=['Закрыть'], commands_prefix=prefix)
+async def process_rm_command(message: types.Message):
+    await message.answer("Убираем шаблоны сообщений", reply_markup=ReplyKeyboardRemove())
+    await message.delete()
+
+
+@dp.message_handler(commands=config.COMMANDS_LIST, commands_prefix=prefix)
 async def wiki(message: types.Message):
     """Список команд с описание на википедии"""
-
-    await message.answer(methods.get_list_wiki(message.text[1:]))
+    await message.answer(text='Просвещается @{}'.format(message.from_user.username),
+                         reply_markup=keybord_creater(config.COMMANDS_LIST[message.text[1:]]))
     await message.delete()
+
+
+@dp.poll_answer_handler()
+async def read_poll(answer: types.PollAnswer):
+    if answer.user.username not in poll_answers:
+        poll_answers.append(answer.user.username)
+
+
+async def tap_in_meeting(args):
+    """Предупреждение о том, что встреча началась"""
+    chat, message = args
+    await bot.send_message(chat, "{}, запланированная конференция началась".format(message))
+
+
+async def tap_in_meeting_of_15_minuts(args):
+    """Предупреждение о встрече за 15 минут"""
+    chat, message = args
+    await bot.send_message(chat, "{}, запланированная конференция начнется через 15 минут".format(message))
+
+@dp.message_handler(commands=['meet'])
+async def create_meeting(message: types.Message):
+    """Запланировать конференцию (созвон) в определенное время"""
+    arguments = message.get_args()
+    arguments = arguments.split(' ')
+    for arg in arguments[:-1]:
+        if not arg.startswith("@"):
+            print(arg)
+            arguments.remove(arg)
+
+    meet = aioschedule.every().day.at(arguments[-1]).do(tap_in_meeting, [message.chat.id, " ".join(arguments[:-1])])
+    meet_of_15_minuts = aioschedule.every().day.at(arguments[-1]).do(tap_in_meeting_of_15_minuts,
+                                                                     [message.chat.id, " ".join(arguments[:-1])])
+    meet_of_15_minuts.next_run = meet.next_run - datetime.timedelta(minutes=15)
+    await message.answer("Запланирована встреча на {}".format(arguments[-1]))
+
+    while True:
+        await aioschedule.run_pending()
+        await asyncio.sleep(60)
+        print(meet.__dict__)
+        print(meet_of_15_minuts.__dict__)
+        if meet.last_run:
+            aioschedule.cancel_job(meet_of_15_minuts)
+            aioschedule.cancel_job(meet)
+            break
+
+
+@dp.message_handler(commands=['dis', 'discord'], commands_prefix=prefix)
+async def wiki(message: types.Message):
+    """Канал дискорд"""
+    if str(message.chat.id) == chat_id:
+        await message.answer(text='Залетай  в [{}]({})'.format('дискорд', config.DS_CHANEL))
 
 
 @dp.message_handler(
@@ -54,6 +125,7 @@ async def answer_sticker(message: types.Message):
 @dp.message_handler()
 async def start(message: types.Message):
     """Обработчик сообщений"""
+
     if message.text and not message.text.startswith(prefix):
         try:
             await message.reply(methods.start_message(message))
@@ -67,6 +139,14 @@ async def poll_everyday():
         chat_id,
         *methods.create_poll(),
     )
+    count = 0
+    while count < 1:
+        await asyncio.sleep(600)
+        list_no_answer_poll = [n for n in config.CHAT_MEMBERS[chat_id] if n not in poll_answers]
+        if list_no_answer_poll:
+            await bot.send_message(chat_id, "Голосуем @" + ' @'.join(list_no_answer_poll))
+        count += 1
+    poll_answers.clear()
 
 
 @dp.async_task
