@@ -3,6 +3,8 @@ import random
 import Levenshtein
 import config
 
+import db
+
 
 def start_message(message):
     """Приветствие и обработка матов"""
@@ -13,7 +15,10 @@ def start_message(message):
             )
         for bad in config.BAD_WORDS:
             if bad in message.text.lower():
-                return "Ты матершинник, {}".format(message["from"].first_name)
+                db.insert_answer(message.from_user.id, 1)
+                chance = random.randint(0, 9)
+                if chance > 6:
+                    return random.choice(config.BAD_WORD_ANSWER).format(message.from_user.first_name)
         if find_command(message.text, config.CALL_BOT):
             return (
                 """{} \nКомандуй\n!poll - опрос;\n!wiki - библиотека знаний""".format(

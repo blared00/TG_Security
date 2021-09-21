@@ -11,6 +11,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.types import ContentType, ReplyKeyboardRemove
 from aiogram.utils.exceptions import MessageTextIsEmpty
 
+import db
 import methods
 from keyboards import keybord_creater, inline_keybord_creater
 
@@ -43,6 +44,8 @@ async def poll_start_game(message: types.Message):
 async def process_rm_command(message: types.Message):
     await message.answer("Убираем шаблоны сообщений", reply_markup=ReplyKeyboardRemove())
     await message.delete()
+    await asyncio.sleep(60)
+    await bot.delete_message(message.chat.id, int(message.message_id) + 1)
 
 
 @dp.message_handler(commands=config.COMMANDS_LIST, commands_prefix=prefix)
@@ -51,6 +54,8 @@ async def wiki(message: types.Message):
     await message.answer(text='Просвещается @{}'.format(message.from_user.username),
                          reply_markup=keybord_creater(config.COMMANDS_LIST[message.text[1:]]))
     await message.delete()
+    await asyncio.sleep(60)
+    await bot.delete_message(message.chat.id, int(message.message_id) + 1)
 
 
 @dp.poll_answer_handler()
@@ -89,8 +94,6 @@ async def create_meeting(message: types.Message):
     while True:
         await aioschedule.run_pending()
         await asyncio.sleep(60)
-        print(meet.__dict__)
-        print(meet_of_15_minuts.__dict__)
         if meet.last_run:
             aioschedule.cancel_job(meet_of_15_minuts)
             aioschedule.cancel_job(meet)
@@ -108,9 +111,10 @@ async def wiki(message: types.Message):
     commands=map(lambda x: x.lower(), config.GHOSTS + config.EQUIPMENT + config.GOOD_PHOTO + config.OTHER),
     commands_prefix=prefix)
 async def commands_wiki(message: types.Message):
-    """Возвращает ссылку на википедию """
+    """Возвращает ссылку на википедию"""
     await message.answer(methods.get_link_wiki(message.text.lower()[1:]))
     await message.delete()
+
 
 
 @dp.message_handler(content_types=ContentType.STICKER)
@@ -121,11 +125,27 @@ async def answer_sticker(message: types.Message):
     except KeyError:
         pass
 
+@dp.message_handler(commands=['score'])
+async def count_bad(message: types.Message):
+    """Подсчет количества матов"""
+    request_db = db.counter()
+    result = []
+    for user_m in request_db:
+        try:
+            user_ = await bot.get_chat_member(chat_id, user_m[1])
+            if user_.user.username in config.CHAT_MEMBERS[chat_id]:
+                result.append(" - ".join((user_.user.username, str(user_m[2]))) + ' шт.')
+        except Exception as e:
+            print(e)
+    # print(result)
+    await message.answer('Таблица матершинников:\n' + '\n'.join(result))
+
 
 @dp.message_handler()
 async def start(message: types.Message):
     """Обработчик сообщений"""
-
+    if message.text.startswith('Просвещается'):
+        await message.delete()
     if message.text and not message.text.startswith(prefix):
         try:
             await message.reply(methods.start_message(message))
@@ -155,8 +175,9 @@ async def scheduler(_):
     aioschedule.every().day.at(config.TIME_START_POLL).do(poll_everyday)
     while True:
         await aioschedule.run_pending()
-        await asyncio.sleep(1)
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":
+    db.open_db()
     executor.start_polling(dp, skip_updates=False, on_startup=scheduler)
